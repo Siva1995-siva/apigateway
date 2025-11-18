@@ -1,0 +1,189 @@
+How do you handle versioning of inter-service communication?
+
+Versioning inter-service communication in Java-based microservices is essential for maintaining compatibility as services evolve independently. Below is a clear, practical guide covering API versioning strategies, messaging/event versioning, and recommended Java patterns.
+
+✅ 1. API (REST) Versioning
+A. URI Versioning (Most Common & Easiest)
+
+Example:
+
+GET /api/v1/customers
+GET /api/v2/customers
+
+Pros:
+
+Clear contract for consumers
+
+Supports side-by-side versions
+
+Simple to implement
+
+How to implement in Spring Boot:
+@RestController
+@RequestMapping("/api/v1/customers")
+public class CustomerControllerV1 { ... }
+
+@RestController
+@RequestMapping("/api/v2/customers")
+public class CustomerControllerV2 { ... }
+
+B. Header-Based Versioning
+GET /customers
+Headers: X-API-Version: 2
+
+
+Used by large enterprises to avoid URI clutter.
+
+@GetMapping(value = "/customers", headers = "X-API-Version=1")
+public CustomerResponse getV1() { ... }
+
+@GetMapping(value = "/customers", headers = "X-API-Version=2")
+public CustomerResponse getV2() { ... }
+
+C. Content Negotiation (Accept Header)
+Accept: application/vnd.company.customer-v1+json
+
+@GetMapping(value = "/customers",
+            produces = "application/vnd.company.customer-v1+json")
+public CustomerV1 getCustomerV1() { ... }
+
+✅ 2. Event / Messaging Versioning (Kafka, RabbitMQ, etc.)
+
+Microservices often communicate asynchronously, so event versioning is critical.
+
+A. Schema Evolution with Avro + Schema Registry (Best Practice)
+
+Use Confluent Schema Registry with Kafka.
+
+Example Avro schema:
+
+customer-created-v1.avsc
+
+{
+  "type": "record",
+  "name": "CustomerCreated",
+  "namespace": "events.customer",
+  "fields": [
+    { "name": "id", "type": "string" },
+    { "name": "name", "type": "string" }
+  ]
+}
+
+
+customer-created-v2.avsc
+
+{
+  "type": "record",
+  "name": "CustomerCreated",
+  "namespace": "events.customer",
+  "fields": [
+    { "name": "id", "type": "string" },
+    { "name": "name", "type": "string" },
+    { "name": "email", "type": ["null", "string"], "default": null }
+  ]
+}
+
+Evolution rules:
+
+Only add optional fields
+
+Never remove required fields
+
+Never change field types
+
+Java deserialization handles missing fields automatically.
+
+B. Versioning Using Event Names
+
+Emit new event names:
+
+customer.created.v1
+
+customer.created.v2
+
+Consumers handle both during migration.
+
+C. In-Event Version Tag
+
+Include a version field inside the event payload.
+
+{
+  "eventType": "CustomerCreated",
+  "version": 2,
+  "data": { ... }
+}
+
+
+Consumers switch based on version.
+
+✅ 3. DTO Versioning in Java Code
+
+When API or events evolve, version DTOs.
+
+Example:
+
+@Data
+public class CustomerDtoV1 {
+    private String id;
+    private String name;
+}
+
+@Data
+public class CustomerDtoV2 {
+    private String id;
+    private String name;
+    private String email;
+}
+
+
+Mapper layer:
+
+@Mapper(componentModel = "spring")
+public interface CustomerMapper {
+   CustomerDtoV2 toV2(CustomerEntity entity);
+}
+
+✅ 4. Backward Compatibility Rules
+
+Whether REST or Kafka:
+
+Principles:
+
+✔ Consumers should not break when producers update
+✔ Deploy new versions as additive changes
+✔ Run old + new versions in parallel
+✔ Use feature toggles for rollout
+✔ Deprecate old versions with retirement plan
+
+✅ 5. Real–Life Pattern Using Spring Cloud
+
+Example: evolve Customer Service API from V1 to V2
+
+Deploy /v2 endpoint in Customer Service
+
+Update clients gradually
+
+Keep /v1 active for some time
+
+Monitor usage
+
+Remove /v1 once no traffic
+
+Tools that support this:
+
+Spring Boot
+
+Spring Cloud OpenFeign
+
+Spring Cloud Gateway
+
+Kafka + Schema Registry
+
+🎯 Final Recommendation Summary
+Area	Best Practice
+REST APIs	URI versioning (simple) OR header versioning (enterprise)
+Kafka events	Schema-Registry + Avro/Protobuf
+DTOs	Create separate versioned DTO classes
+Entities	Keep stable, version at boundary only
+Compatibility	Additive changes only, never breaking
+Migration	Run old + new versions side-by-side
